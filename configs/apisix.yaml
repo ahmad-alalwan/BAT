@@ -1,0 +1,126 @@
+# APISIX Configuration for BoundedAuthT (BAT)
+# This configuration defines routes, upstreams, and plugins
+
+# Upstreams
+upstreams:
+  - id: bat-api-upstream
+    type: roundrobin
+    nodes:
+      - host: bat-api
+        port: 8080
+        weight: 1
+    timeout:
+      connect: 6s
+      send: 6s
+      read: 6s
+    keepalive_pool:
+      size: 320
+      timeout: 60s
+      idle_timeout: 10s
+
+  - id: mock-tenant-upstream
+    type: roundrobin
+    nodes:
+      - host: mock-tenant
+        port: 8081
+        weight: 1
+    timeout:
+      connect: 6s
+      send: 6s
+      read: 6s
+
+# Routes
+routes:
+  # Route 1: BAT API routes with OpenTelemetry
+  - id: bat-api-route
+    uri: "/api/bat/*"
+    upstream_id: bat-api-upstream
+    plugins:
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,OPTIONS"
+        allow_headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-Tenant-ID"
+        expose_headers: "Content-Length,Content-Range"
+      opentelemetry:
+        sampler:
+          name: always_on
+        set:
+          resource:
+            - "service.name=apisix"
+            - "service.version=3.11.0"
+      request-id:
+        include_in_response: true
+        generator: "uuid#counter"
+      proxy-rewrite:
+        headers:
+          X-Forwarded-For: "$remote_addr"
+          X-Real-IP: "$remote_addr"
+
+  # Route 2: Auth callback to mock tenant (for cross-domain redirect testing)
+  - id: auth-callback-route
+    uri: "/auth/callback"
+    upstream_id: mock-tenant-upstream
+    plugins:
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,DELETE,OPTIONS"
+        allow_headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+      opentelemetry:
+        sampler:
+          name: always_on
+        set:
+          resource:
+            - "service.name=apisix"
+            - "service.version=3.11.0"
+      request-id:
+        include_in_response: true
+        generator: "uuid#counter"
+
+  # Route 3: Health check routes
+  - id: bat-api-health-route
+    uri: "/health"
+    upstream_id: bat-api-upstream
+    plugins:
+      cors:
+        allow_origins: "*"
+
+  - id: mock-tenant-health-route
+    uri: "/health"
+    upstream_id: mock-tenant-upstream
+    plugins:
+      cors:
+        allow_origins: "*"
+
+  # Route 4: Static files for dashboard
+  - id: static-files-route
+    uri: "/static/*"
+    upstream_id: bat-api-upstream
+    plugins:
+      cors:
+        allow_origins: "*"
+
+  # Route 5: Root route redirect to dashboard
+  - id: root-route
+    uri: "/"
+    upstream_id: bat-api-upstream
+    plugins:
+      cors:
+        allow_origins: "*"
+
+# Global plugin configuration
+plugins:
+  cors:
+    allow_origins: "*"
+    allow_methods: "GET,POST,PUT,DELETE,OPTIONS"
+    allow_headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-Tenant-ID"
+    expose_headers: "Content-Length,Content-Range"
+  opentelemetry:
+    sampler:
+      name: always_on
+    set:
+      resource:
+        - "service.name=apisix"
+        - "service.version=3.11.0"
+  request-id:
+    include_in_response: true
+    generator: "uuid#counter"

@@ -1,0 +1,61 @@
+# OpenTelemetry Collector Configuration for BoundedAuthT (BAT)
+# This configuration defines receivers, processors, exporters, and pipelines
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 8192
+  memory_limiter:
+    limit_mib: 512
+    spike_limit_mib: 128
+    check_interval: 5s
+  resource:
+    attributes:
+      - key: environment
+        value: production
+        action: upsert
+      - key: service_name
+        from_attribute: service.name
+        action: upsert
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+    path: /health
+    check:
+      pipeline:
+        histogram: true
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+exporters:
+  otlp:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+  logging:
+    loglevel: info
+
+service:
+  extensions: [health_check, pprof]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [otlp, logging]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [logging]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [logging]

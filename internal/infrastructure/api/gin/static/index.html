@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BAT Zero-Knowledge Auth Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 16px;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 14px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .info-section {
+            margin-top: 32px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .info-section h3 {
+            color: #333;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .info-item {
+            margin-bottom: 12px;
+        }
+
+        .info-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .info-label {
+            font-weight: 500;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .info-value {
+            color: #333;
+            font-size: 14px;
+            word-break: break-all;
+            padding: 4px 0;
+        }
+
+        .info-value.empty {
+            color: #999;
+            font-style: italic;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            border-left: 4px solid #c33;
+        }
+
+        .success {
+            background: #efe;
+            color: #3a3;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            border-left: 4px solid #3a3;
+        }
+
+        .flow-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 24px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .flow-step {
+            display: flex;
+            align-items: center;
+        }
+
+        .flow-step.active {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .flow-arrow {
+            margin: 0 12px;
+            color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔐 BAT Zero-Knowledge Auth Dashboard</h1>
+            <p>BoundedAuthT Authentication Gateway</p>
+        </div>
+
+        <div class="flow-indicator">
+            <div class="flow-step" id="step1">1. Login</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step" id="step2">2. OTP</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step" id="step3">3. JWT</div>
+        </div>
+
+        <div id="message-area"></div>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label for="tenant-id">Tenant ID</label>
+                <input type="text" id="tenant-id" name="tenant_id" value="tenant-a" required>
+            </div>
+
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" value="admin" required>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" value="123456" required>
+            </div>
+
+            <button type="submit" class="submit-btn" id="submit-btn">
+                🔐 Authenticate
+            </button>
+        </form>
+
+        <div class="info-section">
+            <h3>🔍 Authentication Details</h3>
+            
+            <div class="info-item">
+                <div class="info-label">Trace ID:</div>
+                <div class="info-value empty" id="trace-id">
+                    <!-- In real life this comes from OTel, for now leave it blank -->
+                    Not available
+                </div>
+            </div>
+
+            <div class="info-item">
+                <div class="info-label">Final JWT:</div>
+                <div class="info-value empty" id="final-jwt">
+                    Waiting for authentication...
+                </div>
+            </div>
+
+            <div class="info-item">
+                <div class="info-label">User ID:</div>
+                <div class="info-value empty" id="user-id">
+                    -
+                </div>
+            </div>
+
+            <div class="info-item">
+                <div class="info-label">Tenant ID:</div>
+                <div class="info-value empty" id="tenant-display">
+                    -
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentStep = 1;
+
+        function updateFlowIndicator(step) {
+            currentStep = step;
+            for (let i = 1; i <= 3; i++) {
+                const stepElement = document.getElementById(`step${i}`);
+                if (i <= step) {
+                    stepElement.classList.add('active');
+                } else {
+                    stepElement.classList.remove('active');
+                }
+            }
+        }
+
+        function showMessage(message, type = 'info') {
+            const messageArea = document.getElementById('message-area');
+            const className = type === 'error' ? 'error' : 'success';
+            messageArea.innerHTML = `<div class="${className}">${message}</div>`;
+            
+            // Auto-hide success messages after 5 seconds
+            if (type === 'success') {
+                setTimeout(() => {
+                    messageArea.innerHTML = '';
+                }, 5000);
+            }
+        }
+
+        function updateInfo(field, value) {
+            const element = document.getElementById(field);
+            if (value) {
+                element.textContent = value;
+                element.classList.remove('empty');
+            } else {
+                element.textContent = field === 'trace-id' ? 'Not available' : 'Waiting for authentication...';
+                element.classList.add('empty');
+            }
+        }
+
+        function setLoading(loading) {
+            const submitBtn = document.getElementById('submit-btn');
+            if (loading) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="loading"></span>Processing...';
+            } else {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '🔐 Authenticate';
+            }
+        }
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            
+            const formData = new FormData(event.target);
+            const data = Object.fromEntries(formData.entries());
+            
+            setLoading(true);
+            showMessage('');
+            updateFlowIndicator(1);
+
+            try {
+                // Step 1: Submit login form
+                const response = await fetch('/api/bat/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.status === 302) {
+                    // Extract OTP code from redirect location
+                    const location = response.headers.get('Location');
+                    const urlParams = new URLSearchParams(location.split('?')[1]);
+                    const otpCode = urlParams.get('code');
+                    
+                    updateFlowIndicator(2);
+                    showMessage(`📱 OTP generated: ${otpCode}`, 'success');
+                    updateInfo('trace-id', `trace-${Date.now()}`); // Mock trace ID
+                    
+                    // Step 2: Exchange OTP for JWT
+                    setTimeout(async () => {
+                        try {
+                            const exchangeResponse = await fetch(`/auth/callback?code=${otpCode}`);
+                            const result = await exchangeResponse.json();
+                            
+                            if (exchangeResponse.ok) {
+                                updateFlowIndicator(3);
+                                showMessage('✅ Authentication successful!', 'success');
+                                updateInfo('final-jwt', result.token);
+                                updateInfo('user-id', result.user.id);
+                                updateInfo('tenant-display', result.user.tenant_id);
+                            } else {
+                                throw new Error(result.error || 'OTP exchange failed');
+                            }
+                        } catch (error) {
+                            showMessage(`❌ OTP exchange failed: ${error.message}`, 'error');
+                            updateFlowIndicator(1);
+                        } finally {
+                            setLoading(false);
+                        }
+                    }, 1000); // Small delay to show OTP step
+                    
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Login failed');
+                }
+                
+            } catch (error) {
+                showMessage(`❌ Authentication failed: ${error.message}`, 'error');
+                updateFlowIndicator(1);
+                setLoading(false);
+            }
+        }
+
+        // Initialize form
+        document.getElementById('login-form').addEventListener('submit', handleLogin);
+        
+        // Set initial state
+        updateFlowIndicator(1);
+    </script>
+</body>
+</html>

@@ -1,0 +1,166 @@
+version: '3.8'
+
+services:
+  # Redis for OTP storage
+  redis:
+    image: redis:7-alpine
+    container_name: bat-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - bat-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # etcd for APISIX configuration
+  etcd:
+    image: bitnami/etcd:3.5
+    container_name: bat-etcd
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    volumes:
+      - etcd_data:/bitnami/etcd/data
+    networks:
+      - bat-network
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # APISIX API Gateway
+  apisix:
+    image: apache/apisix:3.11.0-debian
+    container_name: bat-apisix
+    depends_on:
+      etcd:
+        condition: service_healthy
+    ports:
+      - "9080:9080"  # HTTP port
+      - "9180:9180"  # Dashboard port
+    volumes:
+      - ./configs/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+    networks:
+      - bat-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:1.50
+    container_name: bat-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - COLLECTOR_OTLP_HTTP_PORT=4318
+      - COLLECTOR_OTLP_GRPC_PORT=4317
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC receiver
+      - "4318:4318"    # OTLP HTTP receiver
+      - "14268:14268"  # Jaeger collector HTTP
+      - "14250:14250"  # Jaeger collector gRPC
+    networks:
+      - bat-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:14269/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.88.0
+    container_name: bat-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./configs/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8888:8888"   # Prometheus metrics exposed by the collector
+      - "8889:8889"   # Prometheus exporter metrics
+      - "13133:13133" # health_check extension
+      - "9411:9411"   # Zipkin receiver
+    depends_on:
+      - jaeger
+    networks:
+      - bat-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:13133"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Mock Tenant Service
+  mock-tenant:
+    build:
+      context: .
+      dockerfile: cmd/mock-tenant/Dockerfile
+    container_name: bat-mock-tenant
+    ports:
+      - "8081:8081"
+    environment:
+      - GIN_MODE=release
+    networks:
+      - bat-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  # BAT API Gateway
+  bat-api:
+    build:
+      context: .
+      dockerfile: cmd/api/Dockerfile
+    container_name: bat-api
+    ports:
+      - "8080:8080"
+    environment:
+      - GIN_MODE=release
+      - REDIS_ADDR=redis:6379
+      - OTEL_EXPORTER_JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=bat-api,service.version=1.0.0
+    depends_on:
+      redis:
+        condition: service_healthy
+      mock-tenant:
+        condition: service_healthy
+      jaeger:
+        condition: service_healthy
+    networks:
+      - bat-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  
+volumes:
+  redis_data:
+    driver: local
+  etcd_data:
+    driver: local
+
+networks:
+  bat-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
